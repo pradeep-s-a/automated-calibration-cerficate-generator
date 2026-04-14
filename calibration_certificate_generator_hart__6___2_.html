@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calibration Certificate Generator</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+  :root {
+    --bg: #0b1120;
+    --surface: #111827;
+    --surface2: #1a2234;
+    --border: #1e3a5f;
+    --accent: #00d4aa;
+    --accent2: #0ea5e9;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --label: #94a3b8;
+    --pass: #10b981;
+    --error: #f43f5e;
+    --warn: #f59e0b;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid bg */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background-image:
+      linear-gradient(rgba(0,212,170,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,170,.04) 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none;
+  }
+
+  .app { position: relative; z-index: 1; max-width: 960px; margin: 0 auto; padding: 32px 20px 80px; }
+
+  /* ── Header ── */
+  .header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 24px 0 32px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 36px;
+  }
+  .logo {
+    width: 48px; height: 48px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-weight: 700; font-size: 13px;
+    color: #0b1120; letter-spacing: .5px; flex-shrink: 0;
+  }
+  .header-text h1 { font-size: 20px; font-weight: 600; letter-spacing: -.3px; }
+  .header-text p  { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
+
+  /* ── Steps ── */
+  .steps { display: flex; gap: 0; margin-bottom: 32px; }
+  .step {
+    flex: 1; padding: 10px 16px; font-size: 11px;
+    font-family: var(--mono); color: var(--muted);
+    border-bottom: 2px solid var(--border);
+    cursor: pointer; transition: all .2s;
+    position: relative;
+  }
+  .step.active  { color: var(--accent); border-bottom-color: var(--accent); }
+  .step.done    { color: var(--pass);   border-bottom-color: var(--pass); }
+  .step-num     { font-size: 9px; display: block; margin-bottom: 2px; opacity: .6; }
+
+  /* ── Card ── */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 28px;
+    margin-bottom: 20px;
+    animation: fadeIn .3s ease;
+  }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
+
+  .card-title {
+    font-size: 11px; font-family: var(--mono);
+    color: var(--accent); letter-spacing: 1.5px;
+    text-transform: uppercase; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-title::before {
+    content: ''; width: 3px; height: 14px;
+    background: var(--accent); border-radius: 2px;
+  }
+
+  /* ── Form grid ── */
+  .grid { display: grid; gap: 16px; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+  @media(max-width:640px) { .grid-2,.grid-3 { grid-template-columns:1fr; } }
+
+  .field label {
+    display: block; font-size: 11px; font-family: var(--mono);
+    color: var(--label); margin-bottom: 6px; letter-spacing: .5px;
+  }
+  .field input, .field select, .field textarea {
+    width: 100%; background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-family: var(--mono); font-size: 12.5px;
+    padding: 9px 12px; transition: border-color .2s, box-shadow .2s;
+    outline: none;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0,212,170,.1);
+  }
+  .field textarea { resize: vertical; min-height: 70px; }
+  .field select option { background: var(--surface2); }
+
+  /* ── Results table builder ── */
+  .table-wrap { overflow-x: auto; margin-top: 8px; }
+  .res-table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-family: var(--mono); }
+  .res-table th {
+    background: rgba(0,212,170,.1); color: var(--accent);
+    padding: 8px 10px; text-align: center;
+    border: 1px solid var(--border); font-size: 10px;
+    letter-spacing: .5px; white-space: nowrap;
+  }
+  .res-table td {
+    border: 1px solid var(--border); padding: 4px 2px;
+  }
+  .res-table td input {
+    background: transparent; border: none; outline: none;
+    color: var(--text); font-family: var(--mono);
+    font-size: 11.5px; width: 100%; padding: 4px 6px;
+    text-align: center;
+  }
+  #std-table, #std-table td input {
+    font-family: var(--sans);
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "calt" 0;
+  }
+  .res-table td input:focus { background: rgba(0,212,170,.07); }
+  .res-table tr:nth-child(even) td { background: rgba(255,255,255,.02); }
+
+  .status-sel {
+    background: transparent; border: none; outline: none;
+    color: var(--pass); font-family: var(--mono); font-size: 11px;
+    font-weight: 700; cursor: pointer; width: 100%; text-align: center;
+  }
+  .status-sel option { background: var(--surface2); color: var(--text); }
+
+  .row-btn {
+    background: none; border: 1px dashed var(--border);
+    color: var(--muted); border-radius: 6px; padding: 6px 14px;
+    font-family: var(--mono); font-size: 11px; cursor: pointer;
+    margin-top: 8px; transition: all .2s;
+  }
+  .row-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .del-row {
+    background: none; border: none; color: var(--error);
+    cursor: pointer; font-size: 14px; padding: 4px 8px;
+    opacity: .5; transition: opacity .2s;
+  }
+  .del-row:hover { opacity: 1; }
+
+  /* ── Buttons ── */
+  .btn-row { display: flex; gap: 12px; margin-top: 28px; }
+  .btn {
+    padding: 11px 24px; border-radius: 10px; font-size: 13px;
+    font-family: var(--mono); cursor: pointer; border: none;
+    font-weight: 500; transition: all .18s; letter-spacing: .3px;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #0b1120; font-weight: 700;
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,212,170,.3); }
+  .btn-ghost {
+    background: var(--surface2); color: var(--label);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+  .btn-danger { background: rgba(244,63,94,.1); color: var(--error); border: 1px solid rgba(244,63,94,.3); }
+
+  /* ── Generate panel ── */
+  .generate-panel {
+    background: var(--surface2);
+    border: 1px solid var(--accent);
+    border-radius: 16px; padding: 32px;
+    text-align: center;
+    box-shadow: 0 0 40px rgba(0,212,170,.1);
+  }
+  .generate-panel h2 { font-size: 18px; margin-bottom: 8px; }
+  .generate-panel p  { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+
+  .summary-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    text-align: left; margin-bottom: 28px;
+  }
+  .summary-item { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; }
+  .summary-item .s-label { font-size: 10px; font-family: var(--mono); color: var(--muted); margin-bottom: 4px; }
+  .summary-item .s-val   { font-size: 13px; font-family: var(--mono); color: var(--accent); }
+
+  .pulse {
+    display: inline-block; width: 8px; height: 8px;
+    background: var(--pass); border-radius: 50%; margin-right: 8px;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.7)} }
+
+  /* ── Hidden page indicator ── */
+  .page-indicator {
+    font-size: 10px; font-family: var(--mono); color: var(--muted);
+    text-align: center; margin-top: 16px;
+  }
+
+  /* ── Auth box (Step 6) ── */
+  .auth-box {
+    background: rgba(14,102,85,.08);
+    border: 1px solid rgba(0,212,170,.25);
+    border-radius: 12px; padding: 18px 20px;
+    margin-bottom: 20px;
+  }
+  .auth-box-title {
+    font-size: 11px; font-family: var(--mono); color: var(--accent);
+    letter-spacing: 1.2px; text-transform: uppercase;
+    margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+  }
+  .auth-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media(max-width:560px) { .auth-fields { grid-template-columns:1fr; } }
+  .auth-error {
+    margin-top: 10px; padding: 8px 12px; border-radius: 8px;
+    background: rgba(244,63,94,.1); border: 1px solid rgba(244,63,94,.3);
+    color: var(--error); font-family: var(--mono); font-size: 11px;
+    display: none;
+  }
+  .auth-error.visible { display: block; }
+
+  .divider { height: 1px; background: var(--border); margin: 20px 0; }
+
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; font-family: var(--mono); font-weight: 600;
+  }
+  .tag-pass { background: rgba(16,185,129,.15); color: var(--pass); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <div class="logo">CAL</div>
+    <div class="header-text">
+      <h1>Calibration Certificate Generator</h1>
+      <p>// Temperature Transmitter · Calibration Laboratory</p>
+    </div>
+  </div>
+
+  <div class="steps">
+    <div class="step active" id="step1" onclick="goStep(1)"><span class="step-num">01</span>Instrument</div>
+    <div class="step" id="step2" onclick="goStep(2)"><span class="step-num">02</span>Cal. Info</div>
+    <div class="step" id="step3" onclick="goStep(3)"><span class="step-num">03</span>Customer</div>
+    <div class="step" id="step4" onclick="goStep(4)"><span class="step-num">04</span>Standards</div>
+    <div class="step" id="step5" onclick="goStep(5)"><span class="step-num">05</span>Results</div>
+    <div class="step" id="step6" onclick="goStep(6)"><span class="step-num">06</span>Generate</div>
+  </div>
+
+  <!-- ──────── STEP 1: Instrument ──────── -->
+  <div id="pane1">
+    <div class="card">
+      <div class="card-title">Instrument Under Test</div>
+      <div class="grid grid-2">
+        <div class="field"><label>DESCRIPTION</label><input id="iut_desc" placeholder="e.g. Temperature Transmitter" value="Digital Temperature Transmitter"></div>
+        <div class="field"><label>MANUFACTURER</label><input id="iut_mfr" placeholder="e.g. Yokogawa" value="Yokogawa Electric Corp."></div>
+        <div class="field"><label>MODEL / PART NO.</label><input id="iut_model" placeholder="e.g. YTA310" value="YTA310-A00-31N/SCL"></div>
+        <div class="field"><label>SERIAL NUMBER</label><input id="iut_serial" placeholder="e.g. SN-YK-001" value="SN-YK-YTA310-20240718"></div>
+        <div class="field"><label>TAG NO. / ASSET</label><input id="iut_tag" placeholder="e.g. TT-1042" value="TT-1042  |  ASSET-TT-0091"></div>
+        <div class="field"><label>MEASURING RANGE</label><input id="iut_range" placeholder="e.g. 0–175 °C" value="0 – 175 °C (RTD PT100)"></div>
+        <div class="field"><label>OUTPUT SIGNAL</label><input id="iut_output" placeholder="e.g. 4–20 mA HART" value="4 – 20 mA DC  /  HART Rev.7"></div>
+        <div class="field"><label>ACCURACY CLASS</label><input id="iut_accuracy" placeholder="e.g. ±0.1% of Span" value="±0.1 % of Span (mfr. spec.)"></div>
+        <div class="field"><label>SUPPLY VOLTAGE</label><input id="iut_supply" placeholder="e.g. 24 V DC" value="24 V DC (external)"></div>
+        <div class="field"><label>PHYSICAL CONDITION</label><input id="iut_condition" placeholder="e.g. Clean – No visible damage" value="Clean – No visible damage"></div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="goStep(2)">Next → Cal. Info</button>
+    </div>
+  </div>
+
+  <!-- ──────── STEP 2: Cal Info ──────── -->
+  <div id="pane2" style="display:none">
+    <div class="card">
+      <div class="card-title">Calibration Details</div>
+      <div class="grid grid-2">
+        <div class="field"><label>CERTIFICATE NUMBER</label><input id="cert_no" value="MIT/CAL/TT/2025/0001"></div>
+        <div class="field"><label>LAB NAME</label><input id="lab_name" value="Calibration Laboratory"></div>
+        <div class="field"><label>CALIBRATION DATE</label><input id="cal_date" type="date" value="2025-03-20"></div>
+        <div class="field"><label>CERTIFICATE DATE</label><input id="cert_date" type="date" value="2025-03-21"></div>
+        <div class="field"><label>VALID UNTIL</label><input id="valid_until" type="date" value="2026-03-19"></div>
+        <div class="field"><label>PROCEDURE REFERENCE</label><input id="proc_ref" value="MIT-PROC-TT-001, Rev. 1"></div>
+        <div class="field"><label>AMBIENT TEMPERATURE</label><input id="amb_temp" value="23.1 °C  ±  0.5 °C"></div>
+        <div class="field"><label>RELATIVE HUMIDITY</label><input id="amb_rh" value="51 %  ±  3 %"></div>
+        <div class="field"><label>BAROMETRIC PRESSURE</label><input id="amb_baro" value="101.2 kPa"></div>
+        <div class="field"><label>TRACEABILITY</label><input id="traceability" value="ISO 17025 Accredited Ref. Lab"></div>
+        <div class="field"><label>MEASUREMENT UNCERTAINTY</label><input id="uncertainty" value="U = ±0.025 % of Span  (k = 2, ~95 % confidence)"></div>
+        <div class="field"><label>ACCRED. NO.</label><input id="nabl_no" value="MIT-ACCRED-001"></div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="goStep(1)">← Back</button>
+      <button class="btn btn-primary" onclick="goStep(3)">Next → Customer</button>
+    </div>
+  </div>
+
+  <!-- ──────── STEP 3: Customer ──────── -->
+  <div id="pane3" style="display:none">
+    <div class="card">
+      <div class="card-title">Customer / Submitter Information</div>
+      <div class="grid grid-2">
+        <div class="field"><label>COMPANY NAME</label><input id="cust_name" value="Acme Engineering Pvt. Ltd."></div>
+        <div class="field"><label>DEPARTMENT</label><input id="cust_dept" value="QA & Metrology Lab"></div>
+        <div class="field" style="grid-column:1/-1"><label>ADDRESS</label><input id="cust_addr" value="Plot 12, SIDCO Industrial Estate, Chennai – 600 098, Tamil Nadu, India"></div>
+        <div class="field"><label>ORDER / PO NUMBER</label><input id="cust_po" value="PO-2025-00189"></div>
+        <div class="field"><label>CONTACT PERSON</label><input id="cust_contact" value="Mr. R. Balaji"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Authorisation & Signatures</div>
+      <div class="grid grid-3">
+        <div class="field"><label>CALIBRATED BY (NAME)</label><input id="sig1_name" value="S. Anand Kumar"></div>
+        <div class="field"><label>REVIEWED BY (NAME)</label><input id="sig2_name" value="Dr. A. Meenakshi"></div>
+        <div class="field"><label>APPROVED BY (NAME)</label><input id="sig3_name" value="K. Venkataraman"></div>
+        <div class="field"><label>ROLE</label><input id="sig1_role" value="Instrumentation Technician"></div>
+        <div class="field"><label>ROLE</label><input id="sig2_role" value="Lead Metrologist – Process"></div>
+        <div class="field"><label>ROLE</label><input id="sig3_role" value="Head, Calibration Division"></div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="goStep(2)">← Back</button>
+      <button class="btn btn-primary" onclick="goStep(4)">Next → Standards</button>
+    </div>
+  </div>
+
+  <!-- ──────── STEP 4: Standards ──────── -->
+  <div id="pane4" style="display:none">
+    <div class="card">
+      <div class="card-title">Reference Standards Used</div>
+      <div class="table-wrap">
+        <table class="res-table" id="std-table">
+          <thead>
+            <tr>
+              <th>STD ID</th><th>DESCRIPTION</th><th>MAKE / MODEL</th>
+              <th>RANGE</th><th>CERT NO.</th><th>DUE DATE</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="std-body"></tbody>
+        </table>
+      </div>
+      <button class="row-btn" onclick="addStdRow()">+ Add Standard</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="goStep(3)">← Back</button>
+      <button class="btn btn-primary" onclick="goStep(5)">Next → Results</button>
+    </div>
+  </div>
+
+  <!-- ──────── STEP 5: Results ──────── -->
+  <div id="pane5" style="display:none">
+    <div class="card">
+      <div class="card-title">Calibration Results</div>
+      <div class="table-wrap">
+        <table class="res-table" id="res-table">
+          <thead>
+            <tr>
+              <th>TEST PT (%)</th><th>NOMINAL TEMP</th><th>APPLIED TEMP (PV)</th>
+              <th>IUT OUTPUT (mA)</th><th>EXPECTED (mA)</th>
+              <th>ERROR (mA)</th><th>% SPAN ERROR</th><th>TOLERANCE (mA)</th><th>STATUS</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="res-body"></tbody>
+        </table>
+      </div>
+      <button class="row-btn" onclick="addResRow()">+ Add Test Point</button>
+    </div>
+    <div class="card">
+      <div class="card-title">Remarks</div>
+      <div class="field">
+        <textarea id="remarks">The instrument is found to be within the manufacturer's specified tolerances and is certified fit for use. Next calibration is due as per the valid-until date on this certificate.</textarea>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="goStep(4)">← Back</button>
+      <button class="btn btn-primary" onclick="goStep(6)">Review & Generate →</button>
+    </div>
+  </div>
+
+  <!-- ──────── STEP 6: Generate ──────── -->
+  <div id="pane6" style="display:none">
+    <div class="generate-panel">
+      <div style="font-size:32px;margin-bottom:12px">📄</div>
+      <h2>Ready to Generate</h2>
+      <p>Review the summary below, then download your certificate as a PDF.</p>
+      <div id="sig-badge" style="
+        display:inline-flex; align-items:center; gap:8px;
+        background:rgba(0,212,170,0.08); border:1px solid rgba(0,212,170,0.3);
+        border-radius:8px; padding:8px 16px; margin-bottom:16px;
+        font-family:var(--mono); font-size:11px; color:var(--accent);">
+        <span>⟳</span><span id="sig-badge-text">Checking signing server…</span>
+      </div>
+      <script>
+        const signingServerBase = (() => {
+          const { protocol, hostname, origin, port } = window.location;
+          if (protocol === 'file:') return 'http://localhost:5000';
+          if ((hostname === 'localhost' || hostname === '127.0.0.1') && (port === '5000' || port === '')) {
+            return origin;
+          }
+          return 'http://localhost:5000';
+        })();
+
+        fetch(`${signingServerBase}/status`)
+        .then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
+        .then(({ ok, data: d })=>{
+          const badge = document.getElementById('sig-badge');
+          const text  = document.getElementById('sig-badge-text');
+          if (ok && d.ready) {
+            badge.style.borderColor = 'rgba(16,185,129,0.5)';
+            badge.style.background  = 'rgba(16,185,129,0.08)';
+            badge.style.color       = '#10b981';
+            const enc = d.key_encrypted ? '🔒 passphrase required' : '⚠ no passphrase';
+            text.textContent = `Signing ready · ${d.signer} · valid until ${d.cert_valid} · ${enc}`;
+          } else {
+            badge.style.borderColor = 'rgba(245,158,11,0.5)';
+            badge.style.background  = 'rgba(245,158,11,0.08)';
+            badge.style.color       = '#f59e0b';
+            const needsUser = d.error && (
+              d.error.includes('No signing key configured for user') ||
+              d.error.includes('Keys not found')
+            );
+            text.textContent = needsUser
+              ? '⚠ Enter signing username to enable signed PDF download'
+              : `⚠ ${d.error || 'Signing server reachable but not ready'} — PDF will download unsigned`;
+          }
+        }).catch(()=>{
+          const badge = document.getElementById('sig-badge');
+          const text  = document.getElementById('sig-badge-text');
+          badge.style.borderColor = 'rgba(245,158,11,0.5)';
+          badge.style.background  = 'rgba(245,158,11,0.08)';
+          badge.style.color       = '#f59e0b';
+          text.textContent = `⚠ Cannot reach signing server at ${signingServerBase} — PDF will download unsigned`;
+        });
+      </script>
+
+      <div class="summary-grid" id="summary-grid"></div>
+
+      <div class="divider"></div>
+
+      <!-- ── Signing Credentials ── -->
+      <div class="auth-box">
+        <div class="auth-box-title">🔒 Signing Credentials</div>
+        <div class="auth-fields">
+          <div class="field">
+            <label>USERNAME</label>
+            <input id="sign_user" type="text" placeholder="e.g. pradeep"
+                   autocomplete="username">
+          </div>
+          <div class="field">
+            <label>PASSPHRASE</label>
+            <input id="sign_pass" type="password"
+                   placeholder="Key passphrase (set during keygen)"
+                   autocomplete="current-password"
+                   onkeydown="if(event.key==='Enter')generatePDF()">
+          </div>
+        </div>
+        <div class="auth-error" id="auth-error"></div>
+      </div>
+
+      <div class="btn-row" style="justify-content:center">
+        <button class="btn btn-ghost" onclick="goStep(5)">← Edit Results</button>
+        <button class="btn btn-primary" onclick="generatePDF()">⬇ Download PDF Certificate</button>
+      </div>
+      <div class="page-indicator" id="gen-status" style="margin-top:16px"></div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<script>
+// ── Default data ─────────────────────────────────────────────
+const defaultStds = [
+  ["REF-001","Multi-Product Calibrator ","Fluke / 5502A","−200 to 850 °C","MIT/2024/1192","Oct 2025"]
+];
+const defaultRes = [
+  ["0 %",   "0.00 °C",  "0.002 °C",  "4.001","4.000","+0.001","0.006 %","±0.080","PASS"],
+  ["25 %",  "43.75 °C", "43.749 °C", "8.001","8.000","+0.001","0.006 %","±0.080","PASS"],
+  ["50 %",  "87.50 °C", "87.502 °C", "12.002","12.000","+0.002","0.013 %","±0.080","PASS"],
+  ["75 %",  "131.25 °C","131.248 °C","16.001","16.000","+0.001","0.006 %","±0.080","PASS"],
+  ["100 %", "175.00 °C","174.999 °C","20.001","20.000","+0.001","0.006 %","±0.080","PASS"],
+];
+
+function signingServerBaseUrl() {
+  const { protocol, hostname, origin, port } = window.location;
+  if (protocol === 'file:') return 'http://localhost:5000';
+  if ((hostname === 'localhost' || hostname === '127.0.0.1') && (port === '5000' || port === '')) {
+    return origin;
+  }
+  return 'http://localhost:5000';
+}
+
+function signingApiUrl(path) {
+  return `${signingServerBaseUrl()}${path}`;
+}
+
+function normalizeDisplayText(value) {
+  if (value === undefined || value === null) return '';
+  let text = String(value);
+  const replacements = [
+    ['\u00C2\u00B0C', '\u00B0C'],
+    ['\u00C2\u00B0', '\u00B0'],
+    ['\u00C2\u00B1', '\u00B1'],
+    ['\u00E2\u02C6\u2019', '-'],
+    ['\u00E2\u20AC\u201C', '-'],
+    ['\u00E2\u20AC\u201D', '-'],
+    ['\u00E2\u20AC\u2122', "'"],
+    ['\u00E2\u20AC\u0153', '"'],
+    ['\u00E2\u20AC\u009D', '"'],
+  ];
+  for (const [bad, good] of replacements) {
+    text = text.split(bad).join(good);
+  }
+  return text;
+}
+
+function escapeAttr(value) {
+  return normalizeDisplayText(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// ── Step navigation ───────────────────────────────────────────
+let currentStep = 1;
+function goStep(n) {
+  for(let i=1;i<=6;i++){
+    document.getElementById('pane'+i).style.display = i===n ? 'block' : 'none';
+    const el = document.getElementById('step'+i);
+    el.className = 'step' + (i===n?' active':i<n?' done':'');
+  }
+  currentStep = n;
+  if(n===6) buildSummary();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ── Standards table ───────────────────────────────────────────
+function addStdRow(vals=[]) {
+  const tb = document.getElementById('std-body');
+  const tr = document.createElement('tr');
+  const cols = vals.length ? vals : ['','','','','',''];
+  tr.innerHTML = cols.map((v,i)=>`<td><input value="${escapeAttr(v)}" placeholder="${escapeAttr(['STD ID','Description','Make/Model','Range','Cert No.','Due Date'][i])}"></td>`).join('')
+    + `<td><button class="del-row" onclick="this.closest('tr').remove()">✕</button></td>`;
+  tb.appendChild(tr);
+}
+
+function getStdRows() {
+  return [...document.querySelectorAll('#std-body tr')].map(tr =>
+    [...tr.querySelectorAll('input')].map(i=>i.value)
+  );
+}
+
+// ── Results table ─────────────────────────────────────────────
+function addResRow(vals=[]) {
+  const tb = document.getElementById('res-body');
+  const tr = document.createElement('tr');
+  const placeholders = ['0 %','0.000 kPa','0.001 kPa','4.001','4.000','±0.001','0.006 %','±0.032'];
+  const cols = vals.length ? vals : new Array(8).fill('');
+  const status = vals[8] || 'PASS';
+  tr.innerHTML = cols.map((v,i)=>`<td><input value="${escapeAttr(v)}" placeholder="${escapeAttr(placeholders[i]||'')}"></td>`).join('')
+    + `<td><select class="status-sel"><option value="PASS" ${status==='PASS'?'selected':''}>PASS</option><option value="FAIL" ${status==='FAIL'?'selected':''} style="color:#f43f5e">FAIL</option><option value="N/A" ${status==='N/A'?'selected':''}>N/A</option></select></td>`
+    + `<td><button class="del-row" onclick="this.closest('tr').remove()">✕</button></td>`;
+  tb.appendChild(tr);
+}
+
+function getResRows() {
+  return [...document.querySelectorAll('#res-body tr')]
+    .filter(tr => tr.querySelectorAll('input').length >= 8)
+    .map(tr => {
+      const inputs = [...tr.querySelectorAll('input')].map(i=>i.value);
+      const status = tr.querySelector('select')?.value || 'PASS';
+      return [...inputs, status];
+    });
+}
+
+// ── Summary ───────────────────────────────────────────────────
+function buildSummary() {
+  const g = document.getElementById('summary-grid');
+  const rows = getResRows();
+  const pass = rows.filter(r=>r[8]==='PASS').length;
+  const items = [
+    ['Instrument', v('iut_desc')],
+    ['Serial No.', v('iut_serial')],
+    ['Cert No.',   v('cert_no')],
+    ['Cal. Date',  v('cal_date')],
+    ['Valid Until',v('valid_until')],
+    ['Test Points',`${rows.length} points  ·  ${pass} PASS`],
+    ['Customer',   v('cust_name')],
+    ['Uncertainty',v('uncertainty')],
+  ];
+  g.innerHTML = items.map(([l,v])=>`
+    <div class="summary-item">
+      <div class="s-label">${l}</div>
+      <div class="s-val">${v||'—'}</div>
+    </div>`).join('');
+}
+
+function v(id) { return document.getElementById(id)?.value || ''; }
+
+// MIT logo embedded as base64 (PNG)
+const MIT_LOGO_B64 = "data:image/png;base64,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";
+
+// ── PDF Generation ────────────────────────────────────────────
+async function generatePDF() {
+  const status = document.getElementById('gen-status');
+  status.innerHTML = '<span class="pulse"></span>Generating PDF…';
+
+ setTimeout(async () => {
+    try {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+      const W=210, H=297;
+
+      // ── Colour palette ────────────────────────────────────────────────────
+      const deepTeal  = [10,61,61];
+      const teal      = [14,102,85];
+      const accent    = [0,196,156];
+      const lightMint = [235,250,246];
+      const passGreen = [22,118,65];
+      const failRed   = [200,50,50];
+      const gray      = [60,60,60];
+      const lgray     = [140,140,140];
+      const white     = [255,255,255];
+      const warn      = [200,130,10];
+      const warnBg    = [254,249,231];
+      const passBg    = [233,247,239];
+
+      const setFill = c => doc.setFillColor(...c);
+      const setDraw = c => doc.setDrawColor(...c);
+      const setTxt  = c => doc.setTextColor(...c);
+      const setFont = (style, size) => { doc.setFont('helvetica', style); doc.setFontSize(size); };
+
+      // ── Layout constants ──────────────────────────────────────────────────
+      const ML = 10;            // left margin
+      const MR = 10;            // right margin
+      const CW = W - ML - MR;  // content width = 190 mm
+
+      // Two-column KV grid:
+      //   Col A:  label x=ML+2=12,  value x=ML+46=56  (label box = 42mm)
+      //   Col B:  label x=ML+97=107, value x=ML+141=151 (label box = 42mm, value box = 49mm)
+      const KV = {
+        aLx: ML+2,   // col-A label x
+        aVx: ML+46,  // col-A value x  (value area = 190/2 - 46 - 2 gutter = 47mm)
+        bLx: ML+98,  // col-B label x
+        bVx: ML+142, // col-B value x  (value area = 190 - 142 + 10 - 10 = 48mm)
+      };
+      const ROW_H = 6.2;        // vertical step per KV row
+
+      // ── Helper: draw subtle grid lines on page background ────────────────
+      doc.setFillColor(250,255,253);
+      doc.rect(0,0,W,H,'F');
+      doc.setDrawColor(210,240,232); doc.setLineWidth(0.12);
+      for(let x=0;x<=W;x+=8) doc.line(x,0,x,H);
+      for(let y=0;y<=H;y+=8) doc.line(0,y,W,y);
+
+      // ── HEADER BAR ───────────────────────────────────────────────────────
+      setFill(deepTeal); doc.rect(0,0,W,34,'F');
+
+      // MIT Logo — white rounded square background, then image centred inside
+      setFill(white); doc.roundedRect(6, 4, 26, 26, 3, 3, 'F');
+      try {
+        doc.addImage(MIT_LOGO_B64, 'PNG', 7, 5, 24, 24);
+      } catch(e) {
+        setFill(accent); doc.circle(20,17,10,'F');
+        setTxt(deepTeal); setFont('bold',7); doc.text('MIT',20,17,{align:'center'});
+      }
+
+      // Lab name & subtitle
+      setTxt(white); setFont('bold',15);
+      doc.text(v('lab_name')||'Calibration Laboratory', 34, 14);
+      setTxt(accent); setFont('normal',7);
+      doc.text(
+        `Dept. of Instrumentation, MIT, AU · ISO 17025 Accredited · Accred. No. ${v('nabl_no')||'MIT-ACCRED-001'}`,
+        34, 20.5);
+      setTxt([180,230,220]); setFont('normal',6);
+      doc.text('Calibration results are traceable to National / International standards.', 34, 26);
+
+      // Right badge — fixed width so cert number never overflows
+      const badgeX = W-68, badgeW=60;
+      setFill(accent); doc.roundedRect(badgeX,5,badgeW,24,2,2,'F');
+      setTxt(deepTeal); setFont('bold',6.5);
+      doc.text('CALIBRATION CERTIFICATE', badgeX+badgeW/2, 12, {align:'center'});
+      setFont('bold',8);
+      const certNoStr = v('cert_no')||'MIT/CAL/TT/2025/0001';
+      doc.text(certNoStr, badgeX+badgeW/2, 20, {align:'center'});
+      setFont('normal',5.5);
+      doc.text(`Date: ${v('cert_date')||''}`, badgeX+badgeW/2, 26, {align:'center'});
+
+      // Accent stripe under header
+      setFill(accent); doc.rect(0,34,W,1.5,'F');
+
+      // ── DOCUMENT TITLE ───────────────────────────────────────────────────
+      setTxt(deepTeal); setFont('bold',12);
+      doc.text('TEMPERATURE TRANSMITTER  —  CALIBRATION CERTIFICATE', W/2, 43, {align:'center'});
+      setDraw(accent); doc.setLineWidth(0.6);
+      doc.line(ML,45.5,W-MR,45.5);
+
+      // ── Cursor & section helpers ──────────────────────────────────────────
+      let cy = 50;
+
+      function sectionHead(title) {
+        // Full-width teal bar with accent left rule
+        setFill(deepTeal); doc.roundedRect(ML, cy, CW, 7, 1, 1, 'F');
+        setFill(accent);   doc.rect(ML, cy, 2.5, 7, 'F');
+        setTxt(white); setFont('bold', 7.5);
+        doc.text(title, ML+5.5, cy+5);
+        cy += 11;
+      }
+
+      // Fixed-grid KV pair. col='A'|'B'. label right-aligns inside its 40mm box.
+      function kv(col, y, label, val) {
+        const lx = col==='A' ? KV.aLx : KV.bLx;
+        const vx = col==='A' ? KV.aVx : KV.bVx;
+        const maxVW = col==='A' ? 88 : W-MR-vx;   // max value text width
+
+        // Label — right-aligned within 40mm box so colons line up
+        setTxt(lgray); setFont('bold', 6.5);
+        doc.text(label+':', lx+40, y, {align:'right'});
+
+        // Value — left-aligned at vx
+        setTxt(gray); setFont('normal', 7);
+        const truncated = doc.splitTextToSize(String(val||'—'), maxVW)[0];
+        doc.text(truncated, vx, y);
+      }
+
+      // Two-column row helpers: draw col A and col B on the same y
+      function kvRow(y, labA, valA, labB, valB) {
+        kv('A', y, labA, valA);
+        kv('B', y, labB, valB);
+      }
+
+      // Thin separator line between sections
+      function rule(extra=0) {
+        setDraw([210,235,228]); doc.setLineWidth(0.2);
+        doc.line(ML, cy+extra, W-MR, cy+extra);
+      }
+
+      // ── SECTION 1 — INSTRUMENT UNDER TEST ────────────────────────────────
+      sectionHead('1.  INSTRUMENT UNDER TEST (IUT)');
+
+      const iutRows = [
+        ['Description',   v('iut_desc'),       'Measuring Range',  v('iut_range')],
+        ['Manufacturer',  v('iut_mfr'),        'Output Signal',    v('iut_output')],
+        ['Model / Type',  v('iut_model'),      'Supply Voltage',   v('iut_supply')],
+        ['Serial No.',    v('iut_serial'),     'Accuracy Class',   v('iut_accuracy')],
+        ['Tag / Asset',   v('iut_tag'),        'Condition',        v('iut_condition')],
+      ];
+      iutRows.forEach(([lA,vA,lB,vB], i) => kvRow(cy + i*ROW_H, lA, vA, lB, vB));
+      cy += iutRows.length * ROW_H + 4;
+
+      // ── SECTION 2 — CALIBRATION INFORMATION ──────────────────────────────
+      sectionHead('2.  CALIBRATION INFORMATION');
+
+      const calRows = [
+        ['Calibration Date',  v('cal_date'),      'Amb. Temperature', v('amb_temp')],
+        ['Certificate Date',  v('cert_date'),     'Rel. Humidity',    v('amb_rh')],
+        ['Valid Until',       v('valid_until'),   'Baro. Pressure',   v('amb_baro')],
+        ['Procedure Ref.',    v('proc_ref'),      'Traceability',     v('traceability')],
+      ];
+      calRows.forEach(([lA,vA,lB,vB], i) => kvRow(cy + i*ROW_H, lA, vA, lB, vB));
+      cy += calRows.length * ROW_H + 4;
+
+      // ── SECTION 3 — CUSTOMER INFORMATION ─────────────────────────────────
+      sectionHead('3.  CUSTOMER INFORMATION');
+
+      kvRow(cy,             'Company',    v('cust_name'),    'PO / Order No.', v('cust_po'));
+      kvRow(cy + ROW_H,     'Department', v('cust_dept'),    'Contact Person', v('cust_contact'));
+
+      // Address spans full width — single line, truncated at content width
+      kv('A', cy + ROW_H*2, 'Address', '');
+      setTxt(gray); setFont('normal',7);
+      const addrStr = doc.splitTextToSize(v('cust_addr')||'—', CW-46)[0];
+      doc.text(addrStr, KV.aVx, cy + ROW_H*2);
+      cy += ROW_H*3 + 4;
+
+      // ── SECTION 4 — REFERENCE STANDARDS ──────────────────────────────────
+      sectionHead('4.  REFERENCE STANDARDS USED');
+
+      const stds = getStdRows();
+      // Column widths must sum to CW=190
+      doc.autoTable({
+        startY: cy,
+        head: [['Std. ID','Description','Make / Model','Range','Cert. No.','Due Date']],
+        body: stds.length ? stds : defaultStds,
+        theme: 'grid',
+        styles: {
+          fontSize: 7, halign: 'center', cellPadding: 2,
+          font: 'courier', textColor: gray,
+        },
+        headStyles: {
+          fillColor: teal, textColor: white, fontStyle: 'bold',
+          fontSize: 6.5, halign: 'center',
+        },
+        columnStyles: {
+          0: { cellWidth: 18 },
+          1: { cellWidth: 55, halign:'left' },
+          2: { cellWidth: 42, halign:'left' },
+          3: { cellWidth: 26 },
+          4: { cellWidth: 30 },
+          5: { cellWidth: 19 },
+        },
+        alternateRowStyles: { fillColor: lightMint },
+        tableLineColor: [180,220,205], tableLineWidth: 0.3,
+        margin: { left: ML, right: MR },
+      });
+      cy = doc.lastAutoTable.finalY + 5;
+
+      // ── SECTION 5 — CALIBRATION RESULTS ──────────────────────────────────
+      sectionHead('5.  CALIBRATION RESULTS');
+
+      const res = getResRows();
+      const resBody = (res.length ? res : defaultRes).map(r => {
+        const s = r[8]||'PASS';
+        return [...r.slice(0,8), s];
+      });
+
+      // 9 columns, widths sum to CW=190
+      doc.autoTable({
+        startY: cy,
+        head: [['Test Pt\n(%)', 'Nominal\nTemp (Set)', 'Applied\nTemp (PV)',
+                'IUT Out\n(mA)', 'Expected\n(mA)', 'Error\n(mA)',
+                '% Span\nError', 'Tolerance\n(mA)', 'Status']],
+        body: resBody,
+        theme: 'grid',
+        styles: {
+          fontSize: 6.8, halign: 'center', cellPadding: 1.8,
+          font: 'courier', textColor: gray, valign: 'middle',
+        },
+        headStyles: {
+          fillColor: deepTeal, textColor: white, fontStyle: 'bold',
+          fontSize: 6.2, halign: 'center', valign: 'middle',
+          minCellHeight: 10,
+        },
+        columnStyles: {
+          0: { cellWidth: 16 },
+          1: { cellWidth: 26 },
+          2: { cellWidth: 26 },
+          3: { cellWidth: 22 },
+          4: { cellWidth: 22 },
+          5: { cellWidth: 20 },
+          6: { cellWidth: 22 },
+          7: { cellWidth: 20 },
+          8: { cellWidth: 16 },
+        },
+        alternateRowStyles: { fillColor: lightMint },
+        tableLineColor: [180,220,205], tableLineWidth: 0.3,
+        margin: { left: ML, right: MR },
+        didDrawCell: data => {
+          if (data.section === 'body' && data.column.index === 8) {
+            const val = data.cell.text[0];
+            const col = val==='PASS' ? passGreen : val==='FAIL' ? failRed : lgray;
+            doc.setTextColor(...col);
+            doc.setFont('helvetica','bold'); doc.setFontSize(6.8);
+            doc.text(val,
+              data.cell.x + data.cell.width/2,
+              data.cell.y + data.cell.height/2 + 1.2,
+              {align:'center'});
+            doc.setTextColor(...gray);
+            doc.setFont('helvetica','normal');
+          }
+        },
+      });
+      cy = doc.lastAutoTable.finalY + 4;
+
+      // ── UNCERTAINTY  &  OVERALL RESULT  (side-by-side boxes) ─────────────
+      const passCount = resBody.filter(r=>r[8]==='PASS').length;
+      const allPass   = passCount === resBody.length;
+      const boxH = 15, boxW = (CW-4)/2;   // two equal boxes, 2mm gutter
+
+      // Uncertainty box (left)
+      setFill(warnBg); setDraw([220,170,40]); doc.setLineWidth(0.4);
+      doc.roundedRect(ML, cy, boxW, boxH, 1.5,1.5,'FD');
+      setTxt(warn); setFont('bold',7);
+      doc.text('MEASUREMENT UNCERTAINTY', ML+4, cy+5.5);
+      setTxt(gray); setFont('normal',6.2);
+      const uncStr = v('uncertainty')||'U = ±0.025 % of Span  (k = 2,  ~95 % confidence)';
+      doc.text(doc.splitTextToSize(uncStr, boxW-8), ML+4, cy+9.5);
+      doc.text('GUM:2008 compliant evaluation', ML+4, cy+13);
+
+      // Overall result box (right)
+      const rx = ML+boxW+4;
+      setFill(passBg); setDraw(passGreen); doc.setLineWidth(0.5);
+      doc.roundedRect(rx, cy, boxW, boxH, 1.5,1.5,'FD');
+      setTxt(allPass ? passGreen : failRed); setFont('bold',9);
+      doc.text(`OVERALL RESULT:  ${allPass?'PASS':'FAIL'}`,
+        rx+boxW/2, cy+7, {align:'center'});
+      setTxt(gray); setFont('normal',6.5);
+      doc.text(`${passCount} of ${resBody.length} test points within tolerance`,
+        rx+boxW/2, cy+11.5, {align:'center'});
+      cy += boxH + 4;
+
+      // ── REMARKS ───────────────────────────────────────────────────────────
+      const rem = v('remarks');
+      if (rem && rem.trim()) {
+        rule();
+        cy += 3;
+        setTxt(deepTeal); setFont('bold',7);
+        doc.text('REMARKS', ML+2, cy);
+        setTxt(gray); setFont('normal',6.5);
+        const remLines = doc.splitTextToSize(rem, CW-4);
+        doc.text(remLines, ML+2, cy+5);
+        cy += 5 + remLines.length * 3.8 + 3;
+      }
+
+      // ── FOOTER — drawn first so it can never be obscured ─────────────────
+      setFill(deepTeal); doc.rect(0, H-14, W, 14, 'F');
+      setTxt(white); setFont('normal', 6);
+      doc.text(
+        `${v('lab_name')||'Calibration Laboratory'}  ·  Chennai, India  ·  calibration@mit.edu.in`,
+        W/2, H-8.5, {align:'center'});
+      setTxt(accent); setFont('normal', 5.3);
+      doc.text(
+        'This certificate may not be reproduced other than in full. Results relate only to the item calibrated.',
+        W/2, H-4, {align:'center'});
+
+      // ── SIGNATURES — pinned to fixed absolute positions ───────────────────
+      //
+      //  Layout (absolute mm from top of page, H=297):
+      //
+      //    H-60 = 237   stamp centre (radius 10, sits above separator)
+      //    H-50 = 247   separator line
+      //    H-46 = 251   "Calibrated By / Reviewed By / Approved By" labels
+      //    H-37 = 260   signature line  (9mm below label)
+      //    H-31 = 266   name            (6mm below sig line)
+      //    H-25 = 272   role/designation(6mm below name)
+      //    H-14 = 283   footer top      (11mm below role → clear gap)
+      //
+      const SEP_Y   = H - 50;   // separator line
+      const sigY    = SEP_Y + 4; // first text row inside sig band
+
+      // ── CALIBRATION STAMP — drawn BEFORE any text so text always overlays ─
+      //  Floats centred, just above the separator line
+      const stampCX = W / 2;
+      const stampCY = H - 60;        // well above SEP_Y
+      setFill(white); setDraw(accent); doc.setLineWidth(1.2);
+      doc.circle(stampCX, stampCY, 10, 'FD');
+      setDraw(accent); doc.setLineWidth(0.45);
+      doc.circle(stampCX, stampCY,  8.2, 'D');
+      setTxt(deepTeal); setFont('bold', 6);
+      doc.text('CALIBRATED',       stampCX, stampCY - 2.5, {align:'center'});
+      setFont('normal', 5);
+      doc.text('MIT · ISO 17025',  stampCX, stampCY + 1.2, {align:'center'});
+      doc.text(v('cert_date')||'', stampCX, stampCY + 5,   {align:'center'});
+
+      // Separator line (drawn after stamp so it cuts cleanly across stamp bottom)
+      setDraw([180,220,205]); doc.setLineWidth(0.4);
+      doc.line(ML, SEP_Y, W-MR, SEP_Y);
+
+      // ── Three signature columns ────────────────────────────────────────────
+      //  Total content width = 190mm, three equal columns of ~63mm each
+      const sigColW = (CW - 4) / 3;   // ≈62.7mm
+      const sigCols = [
+        { x: ML,                  label:'Calibrated By', name: v('sig1_name'), role: v('sig1_role') },
+        { x: ML + sigColW + 2,    label:'Reviewed By',   name: v('sig2_name'), role: v('sig2_role') },
+        { x: ML + (sigColW+2)*2,  label:'Approved By',   name: v('sig3_name'), role: v('sig3_role') },
+      ];
+
+      sigCols.forEach(s => {
+        const cx2 = s.x + sigColW / 2;
+
+        // Role label (Calibrated By / Reviewed By / Approved By)
+        setTxt(deepTeal); setFont('bold', 6.5);
+        doc.text(s.label, cx2, sigY + 5, {align:'center'});
+
+        // Signature line  (9mm below label row)
+        setDraw(lgray); doc.setLineWidth(0.35);
+        doc.line(s.x + 4, sigY + 13, s.x + sigColW - 4, sigY + 13);
+
+        // Name  (6mm below sig line)
+        setTxt([30,30,30]); setFont('bold', 8);
+        doc.text(s.name||'', cx2, sigY + 19, {align:'center'});
+
+        // Role/designation  (6mm below name)
+        setTxt(lgray); setFont('normal', 6.2);
+        doc.text(s.role||'', cx2, sigY + 25, {align:'center'});
+      });
+
+      // ── SIGN & SAVE ───────────────────────────────────────────────────────
+      const fname = `CalibCert_${(v('cert_no')||'cert').replace(/[/\\: ]/g,'-')}.pdf`;
+
+      // Get PDF as Blob and POST to signing server
+      const pdfBlob = doc.output('blob');
+      status.innerHTML = '<span class="pulse"></span>Signing PDF…';
+
+      // ── Gather and validate credentials ──────────────────────────────────
+      const signUser = (document.getElementById('sign_user')?.value || '').trim();
+      const signPass = document.getElementById('sign_pass')?.value || '';
+      const authErr  = document.getElementById('auth-error');
+      if (authErr) { authErr.classList.remove('visible'); authErr.textContent = ''; }
+
+      if (!signUser) {
+        if (authErr) { authErr.textContent = '✗  Enter a signing username.'; authErr.classList.add('visible'); }
+        document.getElementById('sign_user')?.focus();
+        status.innerHTML = `<span style="color:var(--error)">🔒 Enter signing username.</span>`;
+        return;
+      }
+
+      if (!signPass) {
+        if (authErr) { authErr.textContent = '✗  Enter the signing passphrase.'; authErr.classList.add('visible'); }
+        document.getElementById('sign_pass')?.focus();
+        status.innerHTML = `<span style="color:var(--error)">🔒 Enter signing passphrase.</span>`;
+        return;
+      }
+
+      try {
+        const formData = new FormData();
+        formData.append('file', pdfBlob, fname);
+
+        // Build Basic Auth header (username:password → base64)
+        const b64Creds = btoa(`${signUser}:${signPass}`);
+        const resp = await fetch(signingApiUrl('/sign'), {
+          method:  'POST',
+          headers: { 'Authorization': `Basic ${b64Creds}` },
+          body:    formData,
+        });
+
+        if (resp.status === 401) {
+          const body = await resp.json().catch(() => ({}));
+          const msg  = body.error || 'Authentication failed — check username and passphrase.';
+          if (authErr) { authErr.textContent = '✗  ' + msg; authErr.classList.add('visible'); }
+          // Focus passphrase field for quick retry
+          document.getElementById('sign_pass')?.focus();
+          status.innerHTML = `<span style="color:var(--error)">🔒 Auth failed — re-enter passphrase above.</span>`;
+          return;
+        }
+
+        if (resp.status === 403) {
+          const body = await resp.json().catch(() => ({}));
+          const msg  = body.error || 'Incorrect passphrase — key could not be decrypted.';
+          if (authErr) { authErr.textContent = '✗  ' + msg; authErr.classList.add('visible'); }
+          document.getElementById('sign_pass')?.focus();
+          status.innerHTML = `<span style="color:var(--error)">🔒 Wrong passphrase.</span>`;
+          return;
+        }
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ error: resp.statusText }));
+          throw new Error(err.error || 'Signing server error');
+        }
+
+        const signedBlob = await resp.blob();
+        const url = URL.createObjectURL(signedBlob);
+        const a   = document.createElement('a');
+        a.href     = url;
+        a.download = fname;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        status.innerHTML = `<span style="color:var(--pass)">🔒 Signed & Downloaded: ${fname}</span>`;
+      } catch (signErr) {
+        // Fallback: download unsigned if server not available
+        doc.save(fname);
+        status.innerHTML = `<span style="color:var(--warn)">⚠ Downloaded unsigned (signing server unavailable): ${signErr.message}</span>`;
+      }
+
+    } catch(err) {
+      status.innerHTML = `<span style="color:var(--error)">Error: ${err.message}</span>`;
+      console.error(err);
+    }
+  }, 100);
+}
+
+// ── Init ──────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  // Fetch live calibration data from the sign server (POST /calib-data stores it).
+  // Falls back to window.__hartCalib (legacy script-injection), then demo defaults.
+  fetch(signingApiUrl('/calib-data'))
+    .then(r => (r.status === 204 ? null : r.json()))
+    .catch(() => null)
+    .then(fetched => {
+      const h = fetched || window.__hartCalib || null;
+      if (h) _applyHartData(h);
+      else { defaultStds.forEach(r => addStdRow(r)); defaultRes.forEach(r => addResRow(r)); }
+    });
+});
+
+function _applyHartData(h) {
+
+    // Helper to set a field value
+    const set = (id, val) => {
+      const el = document.getElementById(id);
+      if (el && val !== undefined && val !== null) el.value = val;
+    };
+
+    // ── Step 1: Instrument ──────────────────────────────────────────────────
+    set('iut_desc',      h.iut_desc      || 'Temperature Transmitter (HART)');
+    set('iut_mfr',       h.iut_mfr       || '');
+    set('iut_model',     h.iut_model     || '');
+    set('iut_serial',    h.iut_serial    || '');
+    set('iut_tag',       h.iut_tag       || '');
+    set('iut_output',    h.iut_output    || '4 – 20 mA DC  /  HART Rev.7');
+    set('iut_range',     h.iut_range     || '');
+    set('iut_accuracy',  h.iut_accuracy  || '');
+    set('iut_supply',    h.iut_supply    || '24 V DC (external)');
+    set('iut_condition', h.iut_condition || '');
+
+    // ── Step 2: Cal Info ────────────────────────────────────────────────────
+    set('cal_date',   h.cal_date   || '');
+    set('cert_date',  h.cert_date  || '');
+    set('valid_until',h.valid_until|| '');
+    set('amb_temp',   h.amb_temp   || '');
+    set('cust_name',  h.cust_name  || '');
+    if (h.tolerance !== undefined)
+      set('uncertainty', `U = ±${(h.tolerance * 0.5).toFixed(4)} mA (k=2, ~95% confidence)`);
+
+    // ── Step 4: Standards — swap REF-001 to Fluke metrology well ───────────
+    // (already updated in defaultStds above; only override if HART sends extras)
+
+    // ── Step 5: Results — clear defaults and inject live data ──────────────
+    if (h.result_rows && h.result_rows.length > 0) {
+      // Clear placeholder rows first
+      document.getElementById('res-body').innerHTML = '';
+
+      // Group by cycle to add separator rows
+      let lastCycle = null;
+      h.result_rows.forEach(r => {
+        if (r.cycle !== lastCycle) {
+          if (lastCycle !== null) {
+            // Insert a visual separator row between cycles
+            const tb = document.getElementById('res-body');
+            const sep = document.createElement('tr');
+            sep.style.background = 'rgba(0,212,170,0.04)';
+            sep.innerHTML = `<td colspan="10" style="font-size:10px;color:var(--accent);
+              font-family:var(--mono);padding:3px 8px;letter-spacing:1px;">
+              ▼ ${r.cycle.toUpperCase()} CYCLE</td>`;
+            tb.appendChild(sep);
+          } else {
+            // First cycle label
+            const tb = document.getElementById('res-body');
+            const sep = document.createElement('tr');
+            sep.style.background = 'rgba(0,212,170,0.04)';
+            sep.innerHTML = `<td colspan="10" style="font-size:10px;color:var(--accent);
+              font-family:var(--mono);padding:3px 8px;letter-spacing:1px;">
+              ▲ ${r.cycle.toUpperCase()} CYCLE</td>`;
+            tb.appendChild(sep);
+          }
+          lastCycle = r.cycle;
+        }
+        addResRow([
+          r.test_pt,
+          r.nominal_temp,
+          r.applied_temp,
+          r.iut_ma,
+          r.expected_ma,
+          r.error_ma,
+          r.pct_span_err,
+          r.tolerance_ma,
+          r.status,
+        ]);
+      });
+    } else {
+      defaultRes.forEach(r => addResRow(r));
+    }
+
+    // ── Remarks ─────────────────────────────────────────────────────────────
+    if (h.remarks) set('remarks', h.remarks);
+
+    // ── Banner ──────────────────────────────────────────────────────────────
+    const banner = document.createElement('div');
+    banner.style.cssText = `
+      position:fixed; top:0; left:0; right:0; z-index:9999;
+      background:linear-gradient(90deg,#00d4aa,#0ea5e9);
+      color:#0b1120; font-family:monospace; font-size:13px; font-weight:700;
+      padding:10px 20px; display:flex; align-items:center; gap:12px;
+      box-shadow:0 2px 16px rgba(0,212,170,0.4);`;
+    const passCount = (h.result_rows || []).filter(r => r.status === 'PASS').length;
+    const total     = (h.result_rows || []).length;
+    const allPass   = passCount === total && total > 0;
+    banner.innerHTML = `
+      <span style="font-size:18px">${allPass ? '✅' : '⚠️'}</span>
+      <span>HART Calibration Data Auto-Loaded</span>
+      <span style="opacity:0.7">|</span>
+      <span>${h.iut_range || ''}</span>
+      <span style="opacity:0.7">|</span>
+      <span>${passCount}/${total} Test Points ${allPass ? 'PASS' : 'CHECK'}</span>
+      <span style="margin-left:auto;cursor:pointer;opacity:0.6;font-size:16px"
+            onclick="this.parentElement.remove()">✕</span>`;
+    document.body.prepend(banner);
+    document.querySelector('.app').style.paddingTop = '72px';
+
+  // ── Always load standard reference equipment rows ───────────────────────
+  defaultStds.forEach(r => addStdRow(r));
+}
+</script>
+</body>
+</html>
